@@ -22,7 +22,7 @@ const FileRam = struct {
         var fsize = statData.size;
         var fBufSize = @min(size, fsize);
         var fbuffer = try allocator.alloc(Byte, fBufSize);
-        _ = try file.read(fbuffer);
+        _ = try file.readAll(fbuffer);
 
         var rambuffer = try allocator.alloc(Byte, size);
 

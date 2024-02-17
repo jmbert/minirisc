@@ -21,14 +21,18 @@ pub const Opcode = enum(u7) {
     OP_IMM = 0b0010011,
     OP_IMM_32 = 0b0011011,
     JAL = 0b1101111,
+    JALR = 0b1100111,
     LUI = 0b0110111,
     AUIPC = 0b0010111,
     SYSTEM = 0b1110011,
     BRANCH = 0b1100011,
     MISC_MEM = 0b1111,
     STORE = 0b100011,
+    LOAD = 0b000011,
     _,
 };
+
+const funct3_LOAD = enum(u3) {};
 
 const funct3_MISC_MEM = enum(u3) {
     FENCE = 0b000,
@@ -74,7 +78,7 @@ pub const Instruction = union(enum) {
             .LUI, .AUIPC => Instruction{
                 .U = try InstructionU.FromInt(i),
             },
-            .OP_IMM, .OP_IMM_32 => Instruction{
+            .OP_IMM, .OP_IMM_32, .LOAD, .JALR => Instruction{
                 .I = try InstructionI.FromInt(i),
             },
             .JAL => Instruction{
@@ -152,6 +156,9 @@ pub fn writeOperation(
     writer: anytype,
 ) std.os.WriteError!void {
     switch (opcode) {
+        .JAL, .LUI, .AUIPC, .JALR => {
+            try writer.print("{s}", .{@tagName(opcode)});
+        },
         .MISC_MEM => {
             try writer.print("{s}", .{@tagName(@as(funct3_MISC_MEM, @enumFromInt(funct3.?)))});
         },
@@ -201,9 +208,6 @@ pub fn writeOperation(
         .OP_IMM_32 => {
             try writer.print("{s}", .{@tagName(@as(funct3_OPIMM32, @enumFromInt(funct3.?)))});
         },
-        .JAL, .LUI, .AUIPC => {
-            try writer.print("{s}", .{@tagName(opcode)});
-        },
         .STORE => {
             try writer.print("{s}", .{switch (funct3.?) {
                 0 => "SB",
@@ -222,6 +226,15 @@ pub fn writeOperation(
         },
         .BRANCH => {
             try writer.print("{s}", .{@tagName(@as(funct3_BRANCH, @enumFromInt(funct3.?)))});
+        },
+        .LOAD => {
+            try writer.print("{s}", .{switch (funct3.?) {
+                0 => "LB",
+                1 => "LH",
+                2 => "LW",
+                3 => "LD",
+                else => return std.os.WriteError.InvalidArgument,
+            }});
         },
         _ => return std.os.WriteError.InvalidArgument,
     }
@@ -417,7 +430,9 @@ pub const InstructionI = struct {
                         rdHandle.Write(rs1Handle.Read() & immsextend);
                     },
                     .ADDI => {
-                        rdHandle.Write(@truncate(@as(u65, rs1Handle.Read()) + @as(u65, immsextend)));
+                        var new = @addWithOverflow(rs1Handle.Read(), immsextend).@"0";
+                        std.debug.print("{X} + {X} = {X}\n", .{ rs1Handle.Read(), immsextend, new });
+                        rdHandle.Write(new);
                     },
                     .SLLI => {
                         var shift: u6 = @truncate(self.imm_11_0);
@@ -446,13 +461,63 @@ pub const InstructionI = struct {
                 var f3: funct3_OPIMM32 = @enumFromInt(self.funct3);
                 try switch (f3) {
                     .ADDIW => {
-                        var val = @as(u65, rs1Handle.Read()) + @as(u65, immsextend);
+                        var val = @addWithOverflow(rs1Handle.Read(), immsextend).@"0";
                         var valrextend = signExtend(u32, @as(u32, @truncate(val)));
                         rdHandle.Write(@truncate(valrextend));
                     },
 
                     else => InstructionError.UnimplementedInstruction,
                 };
+            },
+            .LOAD => {
+                var baseHandle = cpu.registers.XRegisterHandle(self.rs1);
+                var destHandle = cpu.registers.XRegisterHandle(self.rd);
+                var offset: i64 = @bitCast(signExtend(u12, self.imm_11_0));
+                var addr: u64 = @bitCast(@as(i64, @intCast(baseHandle.Read())) + offset);
+                var initBuffer = ([_]u8{0} ** 8);
+                var buffer: []Byte = &initBuffer;
+                var size: u8 = 8;
+
+                switch (self.funct3) {
+                    3 => {
+                        // Already done by default
+                    },
+                    2 => {
+                        var buf = ([_]u8{0} ** 4);
+                        buffer = &buf;
+                        size = 4;
+                    },
+                    1 => {
+                        var buf = ([_]u8{0} ** 2);
+                        buffer = &buf;
+                        size = 2;
+                    },
+                    0 => {
+                        var buf = ([_]u8{0} ** 1);
+                        buffer = &buf;
+                        size = 1;
+                    },
+                    else => return InstructionError.InvalidInstruction,
+                }
+
+                try cpu.mem.Read(addr, buffer);
+
+                var buffer8: [8]u8 = [_]u8{0} ** 8;
+
+                for (buffer, 0..) |val, i| {
+                    buffer8[i] = val;
+                }
+
+                var val: u64 = std.mem.readIntLittle(u64, &buffer8);
+                destHandle.Write(val);
+            },
+            .JALR => {
+                var pcHandle = cpu.registers.PCHandle();
+                var newPC: u64 = @bitCast(@as(i64, @bitCast(rs1Handle.Read())) + @as(i64, @bitCast(immsextend)));
+                std.debug.print("{X} + {X}\n", .{ rs1Handle.Read(), immsextend });
+
+                pcHandle.Write(newPC);
+                rdHandle.Write(pcHandle.Read());
             },
             else => return InstructionError.UnknownOpcode,
         }
@@ -603,39 +668,36 @@ pub const InstructionB = struct {
                     .BEQ => {
                         if (rs1Handle.Read() == rs2Handle.Read()) {
                             var newPC: u64 = @bitCast(@addWithOverflow(@as(i64, @bitCast(pcHandle.Read())) - 4, immsextend).@"0");
-                            if (pcHandle.Read() - 4 == newPC) {
-                                std.os.exit(1);
-                            }
                             pcHandle.Write(newPC);
                         }
                     },
                     .BNE => {
                         if (rs1Handle.Read() != rs2Handle.Read()) {
-                            var newPC: u64 = @bitCast(@addWithOverflow(@as(i64, @bitCast(pcHandle.Read())), immsextend).@"0");
+                            var newPC: u64 = @bitCast(@addWithOverflow(@as(i64, @bitCast(pcHandle.Read())) - 4, immsextend).@"0");
                             pcHandle.Write(newPC);
                         }
                     },
                     .BGE => {
                         if (@as(i64, @bitCast(rs1Handle.Read())) >= @as(i64, @bitCast(rs2Handle.Read()))) {
-                            var newPC: u64 = @bitCast(@addWithOverflow(@as(i64, @bitCast(pcHandle.Read())), immsextend).@"0");
+                            var newPC: u64 = @bitCast(@addWithOverflow(@as(i64, @bitCast(pcHandle.Read())) - 4, immsextend).@"0");
                             pcHandle.Write(newPC);
                         }
                     },
                     .BGEU => {
                         if (rs1Handle.Read() >= rs2Handle.Read()) {
-                            var newPC: u64 = @bitCast(@addWithOverflow(@as(i64, @bitCast(pcHandle.Read())), immsextend).@"0");
+                            var newPC: u64 = @bitCast(@addWithOverflow(@as(i64, @bitCast(pcHandle.Read())) - 4, immsextend).@"0");
                             pcHandle.Write(newPC);
                         }
                     },
                     .BLT => {
                         if (@as(i64, @bitCast(rs1Handle.Read())) < @as(i64, @bitCast(rs2Handle.Read()))) {
-                            var newPC: u64 = @bitCast(@addWithOverflow(@as(i64, @bitCast(pcHandle.Read())), immsextend).@"0");
+                            var newPC: u64 = @bitCast(@addWithOverflow(@as(i64, @bitCast(pcHandle.Read())) - 4, immsextend).@"0");
                             pcHandle.Write(newPC);
                         }
                     },
                     .BLTU => {
                         if (rs1Handle.Read() < rs2Handle.Read()) {
-                            var newPC: u64 = @bitCast(@addWithOverflow(@as(i64, @bitCast(pcHandle.Read())), immsextend).@"0");
+                            var newPC: u64 = @bitCast(@addWithOverflow(@as(i64, @bitCast(pcHandle.Read())) - 4, immsextend).@"0");
                             pcHandle.Write(newPC);
                         }
                     },
@@ -716,7 +778,7 @@ pub const InstructionU = struct {
         try writer.print(" ", .{});
         try RegisterFile.writexReg(value.rd, writer);
         try writer.print(", ", .{});
-        try writer.print("{X}", .{@as(u64, value.imm_31_12)});
+        try writer.print("{X}", .{@as(u64, value.imm_31_12) << 12});
     }
 };
 

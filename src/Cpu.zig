@@ -92,7 +92,7 @@ pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, te
             Instructions.InstructionError.UnknownOpcode => return RunReturn{
                 .cpuState = self.*,
                 .t = .{ .UnknownOpcode = .{
-                    .opcode = @enumFromInt(@as(u6, @truncate(instrb))),
+                    .opcode = @enumFromInt(@as(u7, @truncate(instrb))),
                     .instr = instrb,
                 } },
             },
@@ -108,7 +108,7 @@ pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, te
                 Instructions.InstructionError.UnknownOpcode => return RunReturn{
                     .cpuState = self.*,
                     .t = .{ .UnknownOpcode = .{
-                        .opcode = @enumFromInt(@as(u6, @truncate(instrb))),
+                        .opcode = @enumFromInt(@as(u7, @truncate(instrb))),
                         .instr = instrb,
                     } },
                 },
