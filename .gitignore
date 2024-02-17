@@ -3,3 +3,6 @@
 riscof_work/
 zig-out/
 zig-cache/
+sig.*
+log.txt
+**/__pycache__/
