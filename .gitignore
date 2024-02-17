@@ -1,0 +1,5 @@
+**.bin
+**.S
+riscof_work/
+zig-out/
+zig-cache/
