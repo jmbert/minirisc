@@ -643,6 +643,14 @@ pub const InstructionI = struct {
         try writer.print(" ", .{});
         try RegisterFile.writexReg(value.rd, writer);
         try writer.print(", ", .{});
+
+        if (value.opcode == .LOAD) {
+            try writer.print("{X}(", .{@as(i12, @bitCast(value.imm_11_0))});
+            try RegisterFile.writexReg(value.rs1, writer);
+            try writer.print(")", .{});
+            return;
+        }
+
         try RegisterFile.writexReg(value.rs1, writer);
         try writer.print(", ", .{});
         switch (value.opcode) {
@@ -742,11 +750,12 @@ pub const InstructionS = struct {
     ) std.os.WriteError!void {
         try writeOperation(value.opcode, value.funct3, null, null, writer);
         try writer.print(" ", .{});
-        try RegisterFile.writexReg(value.rs1, writer);
-        try writer.print(", ", .{});
         try RegisterFile.writexReg(value.rs2, writer);
         try writer.print(", ", .{});
-        try writer.print("{X}", .{value.getImm()});
+        try writer.print("{X}(", .{@as(i12, @bitCast(value.getImm()))});
+        try RegisterFile.writexReg(value.rs1, writer);
+        try writer.print(")", .{});
+        return;
     }
 
     pub fn getImm(self: InstructionS) u12 {
@@ -1008,43 +1017,43 @@ pub const InstructionCSR = struct {
                 switch (funct3csr) {
                     .CSRRW => {
                         var csrV = csrhandle.Read();
-                        rdhandle.Write(csrV);
                         var rs1 = rs1handle.Read();
                         csrhandle.Write(rs1);
+                        rdhandle.Write(csrV);
                     },
                     .CSRRS => {
                         var csrV = csrhandle.Read();
-                        rdhandle.Write(csrV);
                         var rs1 = rs1handle.Read();
                         var newcsrV = csrV | rs1;
                         csrhandle.Write(newcsrV);
+                        rdhandle.Write(csrV);
                     },
                     .CSRRC => {
                         var csrV = csrhandle.Read();
-                        rdhandle.Write(csrV);
                         var rs1 = rs1handle.Read();
                         var newcsrV = csrV & (~rs1);
                         csrhandle.Write(newcsrV);
+                        rdhandle.Write(csrV);
                     },
                     .CSRRWI => {
                         var csrV = csrhandle.Read();
-                        rdhandle.Write(csrV);
                         var val: u64 = @intCast(self.rs1);
                         csrhandle.Write(val);
+                        rdhandle.Write(csrV);
                     },
                     .CSRRSI => {
                         var csrV = csrhandle.Read();
-                        rdhandle.Write(csrV);
                         var val: u64 = @intCast(self.rs1);
                         var newcsrV = csrV | val;
                         csrhandle.Write(newcsrV);
+                        rdhandle.Write(csrV);
                     },
                     .CSRRCI => {
                         var csrV = csrhandle.Read();
-                        rdhandle.Write(csrV);
                         var val: u64 = @intCast(self.rs1);
                         var newcsrV = csrV & (~val);
                         csrhandle.Write(newcsrV);
+                        rdhandle.Write(csrV);
                     },
                     else => return InstructionError.UnknownOpcode,
                 }
@@ -1115,27 +1124,17 @@ pub const InstructionPRIV = struct {
                                 pcHandle.Write(ra);
                             },
                             .ECALL => {
-                                var mipHandle = cpu.registers.CSRegisterHandle(.MIP);
-                                var currentPending = mipHandle.Read();
-                                var code: u6 = 0;
+                                var code: ExceptionCode = .ECALL_M;
                                 switch (cpu.privilegeMode) {
-                                    .MACHINE => code = @intFromEnum(@as(ExceptionCode, .ECALL_M)),
-                                    .SUPERVISOR => code = @intFromEnum(@as(ExceptionCode, .ECALL_S)),
-                                    .USER => code = @intFromEnum(@as(ExceptionCode, .ECALL_U)),
+                                    .MACHINE => code = .ECALL_M,
+                                    .SUPERVISOR => code = .ECALL_S,
+                                    .USER => code = .ECALL_U,
                                 }
-                                currentPending |= @as(u64, 1) << code;
-                                mipHandle.Write(currentPending);
 
-                                try cpu.RaiseInterrupt(code, true, 0);
+                                try cpu.RaiseException(code, 0);
                             },
                             .EBREAK => {
-                                var mipHandle = cpu.registers.CSRegisterHandle(.MIP);
-                                var currentPending = mipHandle.Read();
-                                const code: u6 = @intFromEnum(@as(ExceptionCode, .BRK));
-                                currentPending |= 1 << code;
-                                mipHandle.Write(currentPending);
-
-                                try cpu.RaiseInterrupt(code, true, 0);
+                                try cpu.RaiseException(.BRK, 0);
                             },
                             else => return InstructionError.UnimplementedInstruction,
                         }

@@ -51,8 +51,8 @@ pub fn New(clockHertz: u64, allocator: Allocator, begin: VirtualAddress) !Cpu {
     return cpu;
 }
 
-pub fn RaiseInterrupt(self: *Cpu, code: u6, isException: bool, data: u64) !void {
-    var int = try Interrupt.New(code, isException, data);
+pub fn RaiseException(self: *Cpu, code: ExceptionCode, data: u64) !void {
+    var int = try Interrupt.New(@intFromEnum(code), true, data);
     try self.pendingInterrupts.append(int);
 }
 
@@ -106,29 +106,21 @@ pub const RunReturn = struct {
 
 pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, testDataBuffer: []Byte) !RunReturn {
     while (true) {
-        var instrb = self.Fetch() catch |err| if (err == MemoryAccessError.NoSegmentMapped) {
-            return RunReturn{ .cpuState = self.*, .t = .{
-                .MemError = self.mem,
-            } };
-        } else return err;
+        var pcHandle = self.registers.PCHandle();
+        instr_cycle: {
+            // Check if instruction is not aligned
+            if (pcHandle.Read() % 4 != 0) {
+                try self.RaiseException(.INSTR_ADDR_MA, pcHandle.Read());
+                break :instr_cycle;
+            }
 
-        var instr = Instruction.FromInt(instrb) catch |err| switch (err) {
-            Instructions.InstructionError.UnknownOpcode => return RunReturn{
-                .cpuState = self.*,
-                .t = .{ .UnknownOpcode = .{
-                    .opcode = @enumFromInt(@as(u7, @truncate(instrb))),
-                    .instr = instrb,
-                } },
-            },
-            else => return err,
-        };
-        std.debug.print("{X}: {s}\n", .{ self.registers.PCHandle().Read() - 4, instr });
-        instr.Execute(self) catch |err| {
-            switch (err) {
-                Instructions.InstructionError.UnimplementedInstruction => return RunReturn{
-                    .cpuState = self.*,
-                    .t = .{ .BadInstruction = instr },
-                },
+            var instrb = self.Fetch() catch |err| if (err == MemoryAccessError.NoSegmentMapped) {
+                return RunReturn{ .cpuState = self.*, .t = .{
+                    .MemError = self.mem,
+                } };
+            } else return err;
+
+            var instr = Instruction.FromInt(instrb) catch |err| switch (err) {
                 Instructions.InstructionError.UnknownOpcode => return RunReturn{
                     .cpuState = self.*,
                     .t = .{ .UnknownOpcode = .{
@@ -136,48 +128,48 @@ pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, te
                         .instr = instrb,
                     } },
                 },
-                MemoryAccessError.NoSegmentMapped => return RunReturn{ .cpuState = self.*, .t = .{
-                    .MemError = self.mem,
-                } },
-
                 else => return err,
-            }
-        };
-        var mipHandle = self.registers.CSRegisterHandle(.MIP);
-        var pcHandle = self.registers.PCHandle();
+            };
+            //std.debug.print("{X}: {s}\n", .{ self.registers.PCHandle().Read() - 4, instr });
+            instr.Execute(self) catch |err| {
+                switch (err) {
+                    Instructions.InstructionError.UnimplementedInstruction => return RunReturn{
+                        .cpuState = self.*,
+                        .t = .{ .BadInstruction = instr },
+                    },
+                    Instructions.InstructionError.UnknownOpcode => return RunReturn{
+                        .cpuState = self.*,
+                        .t = .{ .UnknownOpcode = .{
+                            .opcode = @enumFromInt(@as(u7, @truncate(instrb))),
+                            .instr = instrb,
+                        } },
+                    },
+                    MemoryAccessError.NoSegmentMapped => return RunReturn{ .cpuState = self.*, .t = .{
+                        .MemError = self.mem,
+                    } },
 
-        // Check if instruction is not aligned
-        //if (pcHandle.Read() % 4 != 0) {
-        //    std.debug.print("Misaligned instruction access at {X}\n", .{pcHandle.Read()});
-        //    var new = mipHandle.Read() | (1 << @intFromEnum(@as(ExceptionCode, .INSTR_ADDR_MA)));
-        //    mipHandle.Write(new);
-        //} else {
-        //    var new = mipHandle.Read() & ~@as(u64, (1 << @intFromEnum(@as(ExceptionCode, .INSTR_ADDR_MA))));
-        //    mipHandle.Write(new);
-        //}
+                    else => return err,
+                }
+            };
+        }
 
         // Check for (machine) exceptions
-        var servicing = mipHandle.Read();
         for (self.pendingInterrupts.items, 0..) |int, i| {
             var code: u6 = 0;
             switch (int.n) {
                 .EXCEPTION => code = @intFromEnum(int.n.EXCEPTION),
                 .INTERRUPT => code = @intFromEnum(int.n.INTERRUPT),
             }
-            if (servicing & (@as(u64, 1) << code) != 0) {
-                // Servicing exception
-                // Clear exception bit
-                servicing &= ~(@as(u64, 1) << code);
+            // Servicing exception
+            // Clear exception bit
 
-                var intCpy = self.pendingInterrupts.orderedRemove(i);
-                try intCpy.Service(self, .MACHINE); // TODO - Implement mideleg, etc...
+            var intCpy = self.pendingInterrupts.orderedRemove(i);
+            try intCpy.Service(self, .MACHINE); // TODO - Implement mideleg, etc...
 
-                break;
-            }
+            break;
         }
 
         // Check for end
-
         if (pcHandle.Read() == endAddr) {
             try self.mem.Read(testDataAddr, testDataBuffer);
 

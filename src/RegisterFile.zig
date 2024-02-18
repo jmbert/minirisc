@@ -11,8 +11,19 @@ pub const RegisterError = error{
 pub const xReg = u5;
 
 pub fn writexReg(r: xReg, writer: anytype) std.os.WriteError!void {
-    const baseId = "X";
-    return writer.print("{s}{d}", .{ baseId, r });
+    switch (r) {
+        0 => return writer.print("zero", .{}),
+        1 => return writer.print("ra", .{}),
+        2 => return writer.print("sp", .{}),
+        3 => return writer.print("gp", .{}),
+        4 => return writer.print("tp", .{}),
+        5, 6, 7 => |n| return writer.print("t{d}", .{n - 5}),
+        8 => return writer.print("fp", .{}),
+        9 => return writer.print("s1", .{}),
+        10, 11, 12, 13, 14, 15, 16, 17 => |n| return writer.print("a{d}", .{n - 10}),
+        18, 19, 20, 21, 22, 23, 24, 25, 26, 27 => |n| return writer.print("s{d}", .{n - 16}),
+        28, 29, 30, 31 => |n| return writer.print("t{d}", .{n - 25}),
+    }
 }
 
 pub const csr = enum(u12) {

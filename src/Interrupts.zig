@@ -34,11 +34,11 @@ pub const ExceptionCode = enum(u6) {
     ECALL_U = 8,
     ECALL_S = 9,
 
-    ECALL_M = 10,
-    INSTR_PFLT = 11,
-    LD_PFLT = 12,
+    ECALL_M = 11,
+    INSTR_PFLT = 12,
+    LD_PFLT = 13,
 
-    STR_PFLT = 13,
+    STR_PFLT = 14,
 };
 
 pub const InterruptError = error{
@@ -125,11 +125,8 @@ pub const Interrupt = struct {
         var mtvecHandle = cpu.registers.CSRegisterHandle(.MTVEC);
         var pcHandle = cpu.registers.PCHandle();
 
-        mepcHandle.Write(pcHandle.Read() - 4);
-
+        mepcHandle.Write((pcHandle.Read() - 1) & ~@as(u64, 0b11));
         pcHandle.Write(mtvecHandle.Read() & ~@as(Register, @intCast(0x3)));
-
-        std.debug.print("Servicing {s} to {X} from {X}\n", .{ @tagName(self.n.EXCEPTION), pcHandle.Read(), mepcHandle.Read() });
     }
 
     fn ServiceInterrupt(self: *Interrupt, cpu: *Cpu) !void {
