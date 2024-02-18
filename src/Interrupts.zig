@@ -56,23 +56,29 @@ pub const Interrupt = struct {
         INTERRUPT: InterruptCode,
     },
 
-    level: PrivMode,
+    data: ?u64,
 
-    pub fn New(code: u6, isException: bool, level: PrivMode) !Interrupt {
+    level: PrivMode, // TODO - make this optional. This shouldnt be used before execution
+
+    pub fn New(code: u6, isException: bool, data: u64) !Interrupt {
         if (isException) {
             return Interrupt{
                 .n = .{ .EXCEPTION = @enumFromInt(code) },
-                .level = level,
+                .level = .MACHINE,
+
+                .data = data,
             };
         } else {
             return Interrupt{
                 .n = .{ .INTERRUPT = @enumFromInt(code) },
-                .level = level,
+                .level = .MACHINE,
+                .data = null,
             };
         }
     }
 
-    pub fn Service(self: *Interrupt, cpu: *Cpu) !void {
+    pub fn Service(self: *Interrupt, cpu: *Cpu, level: PrivMode) !void {
+        self.level = level;
         switch (self.n) {
             .EXCEPTION => return self.ServiceException(cpu),
             .INTERRUPT => return self.ServiceInterrupt(cpu),
@@ -107,15 +113,23 @@ pub const Interrupt = struct {
 
         cpu.privilegeMode = .MACHINE; // Machine exception
 
-        // TODO - Set MTVAL here
+        var mtvalHandle = cpu.registers.CSRegisterHandle(.MTVAL);
+        if (self.data) |data| {
+            mtvalHandle.Write(data);
+        } else {
+            // TODO - Log an error here, or something
+            mtvalHandle.Write(0);
+        }
 
         var mepcHandle = cpu.registers.CSRegisterHandle(.MEPC);
         var mtvecHandle = cpu.registers.CSRegisterHandle(.MTVEC);
         var pcHandle = cpu.registers.PCHandle();
 
-        mepcHandle.Write(pcHandle.Read());
+        mepcHandle.Write(pcHandle.Read() - 4);
 
         pcHandle.Write(mtvecHandle.Read() & ~@as(Register, @intCast(0x3)));
+
+        std.debug.print("Servicing {s} to {X} from {X}\n", .{ @tagName(self.n.EXCEPTION), pcHandle.Read(), mepcHandle.Read() });
     }
 
     fn ServiceInterrupt(self: *Interrupt, cpu: *Cpu) !void {

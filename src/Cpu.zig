@@ -15,6 +15,8 @@ const ExceptionCode = Interrupts.ExceptionCode;
 const ePriorities = Interrupts.ePriorities;
 const Interrupt = Interrupts.Interrupt;
 
+const ArrayList = std.ArrayList;
+
 const Cpu = @This();
 
 mem: *Memory,
@@ -24,6 +26,7 @@ registers: *RegisterFile,
 allocator: Allocator,
 
 privilegeMode: PrivMode,
+pendingInterrupts: ArrayList(Interrupt),
 
 pub const PrivMode = enum(u2) {
     USER = 0b00,
@@ -34,16 +37,23 @@ pub const PrivMode = enum(u2) {
 pub fn New(clockHertz: u64, allocator: Allocator, begin: VirtualAddress) !Cpu {
     var mem: *Memory = try Memory.New(allocator);
     var r: *RegisterFile = try RegisterFile.New(allocator);
+    var ints = ArrayList(Interrupt).init(allocator);
     var cpu: Cpu = Cpu{
         .privilegeMode = .MACHINE,
         .mem = mem,
         .clockHertz = clockHertz,
         .registers = r,
         .allocator = allocator,
+        .pendingInterrupts = ints,
     };
     cpu.registers.PCHandle().Write(begin);
 
     return cpu;
+}
+
+pub fn RaiseInterrupt(self: *Cpu, code: u6, isException: bool, data: u64) !void {
+    var int = try Interrupt.New(code, isException, data);
+    try self.pendingInterrupts.append(int);
 }
 
 pub fn AddMemorySegment(self: *Cpu, seg: *MemorySegment) !void {
@@ -112,7 +122,7 @@ pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, te
             },
             else => return err,
         };
-        //std.debug.print("{X}: {s}\n", .{ self.registers.PCHandle().Read() - 4, instr });
+        std.debug.print("{X}: {s}\n", .{ self.registers.PCHandle().Read() - 4, instr });
         instr.Execute(self) catch |err| {
             switch (err) {
                 Instructions.InstructionError.UnimplementedInstruction => return RunReturn{
@@ -148,20 +158,25 @@ pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, te
 
         // Check for (machine) exceptions
         var servicing = mipHandle.Read();
-        for (ePriorities) |currentPrioritry| {
-            if ((servicing & (@as(u64, 1) << @intFromEnum(currentPrioritry))) != 0) {
-                var int = try Interrupt.New(@intFromEnum(currentPrioritry), true, .MACHINE);
-                std.debug.print("Servicing {s}\n", .{@tagName(int.n.EXCEPTION)});
-                try int.Service(self);
+        for (self.pendingInterrupts.items, 0..) |int, i| {
+            var code: u6 = 0;
+            switch (int.n) {
+                .EXCEPTION => code = @intFromEnum(int.n.EXCEPTION),
+                .INTERRUPT => code = @intFromEnum(int.n.INTERRUPT),
+            }
+            if (servicing & (@as(u64, 1) << code) != 0) {
+                // Servicing exception
+                // Clear exception bit
+                servicing &= ~(@as(u64, 1) << code);
+
+                var intCpy = self.pendingInterrupts.orderedRemove(i);
+                try intCpy.Service(self, .MACHINE); // TODO - Implement mideleg, etc...
+
+                break;
             }
         }
 
-        // Clear ECALL bits, as they only last 1 instruction
-        var mip = mipHandle.Read();
-        mip &= ~(@intFromEnum(@as(ExceptionCode, .ECALL_M)) |
-            @intFromEnum(@as(ExceptionCode, .ECALL_S)) |
-            @intFromEnum(@as(ExceptionCode, .ECALL_U)));
-        mipHandle.Write(mip);
+        // Check for end
 
         if (pcHandle.Read() == endAddr) {
             try self.mem.Read(testDataAddr, testDataBuffer);

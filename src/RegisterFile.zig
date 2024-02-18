@@ -25,6 +25,7 @@ pub const csr = enum(u12) {
     MCAUSE = 0x342,
     MSTATUS = 0x300,
     MSCRATCH = 0x340,
+    MTVAL = 0x343,
 
     _,
 };
@@ -47,6 +48,7 @@ pub const CSRegister = union(csr) {
     MCAUSE: *Register,
     MSTATUS: *Register,
     MSCRATCH: *Register,
+    MTVAL: *Register,
 
     pub fn Read(self: *CSRegister) Register {
         switch (self.*) {
@@ -54,7 +56,7 @@ pub const CSRegister = union(csr) {
                 return @as(u64, mextension) | (2 << 62);
             },
             .MHARTID => return 0,
-            .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE, .MSCRATCH => |v| {
+            .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE, .MSCRATCH, .MTVAL => |v| {
                 return v.*;
             },
             .MSTATUS => |v| {
@@ -66,7 +68,7 @@ pub const CSRegister = union(csr) {
         // TODO - Implement WLRL, WARL
         switch (self.*) {
             .MHARTID, .MISA => return,
-            .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE, .MSCRATCH => |v| {
+            .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE, .MSCRATCH, .MTVAL => |v| {
                 v.* = data;
             },
             .MSTATUS => |v| {
@@ -88,6 +90,7 @@ pub const CSRegister = union(csr) {
             .MCAUSE => return CSRegister{ .MCAUSE = r },
             .MSTATUS => return CSRegister{ .MSTATUS = r },
             .MSCRATCH => return CSRegister{ .MSCRATCH = r },
+            .MTVAL => return CSRegister{ .MTVAL = r },
 
             _ => return null,
         }

@@ -183,16 +183,16 @@ pub fn writeOperation(
             }
         },
         .OP_32 => {
-            var funct3op: funct3_OP = @enumFromInt(funct3.?);
+            var funct3op: funct3_OP_32 = @enumFromInt(funct3.?);
             switch (funct3op) {
-                .ADDSUB => {
+                .ADDSUBW => {
                     if (funct7.? == 0b0100000) {
                         return writer.print("SUBW", .{});
                     } else {
                         return writer.print("ADDW", .{});
                     }
                 },
-                .SR => {
+                .SRW => {
                     if (funct7.? == 0b0100000) {
                         return writer.print("SRAW", .{});
                     } else {
@@ -413,11 +413,11 @@ pub const InstructionR = struct {
                         }
                     },
                     .SLLW => {
-                        var rs1: u64 = rs1Handle.Read();
-                        var rs2: u64 = rs2Handle.Read();
-                        var shift: u6 = @truncate(rs2);
-                        var val = @shlWithOverflow(rs1, shift).@"0";
-                        var valrextend = signExtend(u32, @as(u32, @truncate(val)));
+                        var rs1: u32 = @truncate(rs1Handle.Read());
+                        var rs2: u32 = @truncate(rs2Handle.Read());
+                        var shift: u5 = @truncate(rs2);
+                        var val: u32 = @shlWithOverflow(rs1, shift).@"0";
+                        var valrextend = signExtend(u32, val);
                         rdHandle.Write(valrextend);
                     },
                     .SRW => {
@@ -1098,18 +1098,25 @@ pub const InstructionPRIV = struct {
                             .ECALL => {
                                 var mipHandle = cpu.registers.CSRegisterHandle(.MIP);
                                 var currentPending = mipHandle.Read();
+                                var code: u6 = 0;
                                 switch (cpu.privilegeMode) {
-                                    .MACHINE => currentPending |= 1 << @intFromEnum(@as(ExceptionCode, .ECALL_M)),
-                                    .SUPERVISOR => currentPending |= 1 << @intFromEnum(@as(ExceptionCode, .ECALL_S)),
-                                    .USER => currentPending |= 1 << @intFromEnum(@as(ExceptionCode, .ECALL_U)),
+                                    .MACHINE => code = @intFromEnum(@as(ExceptionCode, .ECALL_M)),
+                                    .SUPERVISOR => code = @intFromEnum(@as(ExceptionCode, .ECALL_S)),
+                                    .USER => code = @intFromEnum(@as(ExceptionCode, .ECALL_U)),
                                 }
+                                currentPending |= @as(u64, 1) << code;
                                 mipHandle.Write(currentPending);
+
+                                try cpu.RaiseInterrupt(code, true, 0);
                             },
                             .EBREAK => {
                                 var mipHandle = cpu.registers.CSRegisterHandle(.MIP);
                                 var currentPending = mipHandle.Read();
-                                currentPending |= 1 << @intFromEnum(@as(ExceptionCode, .BRK));
+                                const code: u6 = @intFromEnum(@as(ExceptionCode, .BRK));
+                                currentPending |= 1 << code;
                                 mipHandle.Write(currentPending);
+
+                                try cpu.RaiseInterrupt(code, true, 0);
                             },
                             else => return InstructionError.UnimplementedInstruction,
                         }
