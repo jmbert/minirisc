@@ -72,7 +72,10 @@ pub const CSRegister = union(csr) {
         // TODO - Implement WLRL, WARL
         switch (self.*) {
             .MHARTID, .MISA => return,
-            .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE, .MSTATUS => |v| {
+            .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE => |v| {
+                v.* = data;
+            },
+            .MSTATUS => |v| {
                 v.* = data & mwstatusMask;
             },
             else => return,

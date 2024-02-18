@@ -112,7 +112,7 @@ pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, te
             },
             else => return err,
         };
-        //std.debug.print("{X}: {s}\n", .{ self.registers.PCHandle().Read() - 4, instr });
+        std.debug.print("{X}: {s}\n", .{ self.registers.PCHandle().Read() - 4, instr });
         instr.Execute(self) catch |err| {
             switch (err) {
                 Instructions.InstructionError.UnimplementedInstruction => return RunReturn{
@@ -133,9 +133,16 @@ pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, te
                 else => return err,
             }
         };
+        var mipHandle = self.registers.CSRegisterHandle(.MIP);
+        var pcHandle = self.registers.PCHandle();
+
+        // Check if instruction is not aligned
+        if (pcHandle.Read() % 4 != 0) {
+            var new = mipHandle.Read() | (1 << @intFromEnum(@as(ExceptionCode, .INSTR_ADDR_MA)));
+            mipHandle.Write(new);
+        }
 
         // Check for (machine) exceptions
-        var mipHandle = self.registers.CSRegisterHandle(.MIP);
         var servicing = mipHandle.Read();
         for (ePriorities) |currentPrioritry| {
             if ((servicing & (@as(u64, 1) << @intFromEnum(currentPrioritry))) != 0) {
@@ -151,8 +158,6 @@ pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, te
             @intFromEnum(@as(ExceptionCode, .ECALL_S)) |
             @intFromEnum(@as(ExceptionCode, .ECALL_U)));
         mipHandle.Write(mip);
-
-        var pcHandle = self.registers.PCHandle();
 
         if (pcHandle.Read() == endAddr) {
             try self.mem.Read(testDataAddr, testDataBuffer);
