@@ -124,7 +124,9 @@ const CSRHandle = struct {
         if (self.ptr) |ptr| {
             return ptr.Read();
         } else {
-            std.debug.print("Read from unimplemented CSR {X}\n", .{self.indx});
+            std.io.getStdErr().writer().print("Read from unimplemented CSR {X}\n", .{self.indx}) catch |err| {
+                std.log.err("{!}\n", .{err});
+            };
             std.os.exit(1);
         }
     }
@@ -132,7 +134,9 @@ const CSRHandle = struct {
         if (self.ptr) |ptr| {
             return ptr.Write(data);
         } else {
-            std.debug.print("Write to unimplemented CSR {X}\n", .{self.indx});
+            std.io.getStdErr().writer().print("Write to unimplemented CSR {X}\n", .{self.indx}) catch |err| {
+                std.log.err("{!}\n", .{err});
+            };
             std.os.exit(1);
         }
     }

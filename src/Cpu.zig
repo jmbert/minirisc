@@ -110,6 +110,8 @@ pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, te
         instr_cycle: {
             // Check if instruction is not aligned
             if (pcHandle.Read() % 4 != 0) {
+                try std.io.getStdErr().writer().print("Misaligned instruction access at {X}\n", .{pcHandle.Read()});
+
                 try self.RaiseException(.INSTR_ADDR_MA, pcHandle.Read());
                 break :instr_cycle;
             }
