@@ -486,24 +486,39 @@ pub const InstructionI = struct {
                 var val64: u64 = 0;
 
                 switch (self.funct3) {
-                    3 => {
+                    0b011 => {
                         var bufmini: *[8]u8 = @ptrCast(buffer);
                         val64 = std.mem.readIntLittle(u64, bufmini);
                     },
-                    2 => {
+                    0b010 => {
                         var bufmini: *[4]u8 = @ptrCast(buffer);
                         var val: u32 = std.mem.readIntLittle(u32, bufmini);
                         val64 = signExtend(u32, val);
                     },
-                    1 => {
+                    0b001 => {
                         var bufmini: *[2]u8 = @ptrCast(buffer);
                         var val: u16 = std.mem.readIntLittle(u16, bufmini);
                         val64 = signExtend(u16, val);
                     },
-                    0 => {
+                    0b000 => {
                         var bufmini: *[1]u8 = @ptrCast(buffer);
                         var val: u8 = std.mem.readIntLittle(u8, bufmini);
                         val64 = signExtend(u8, val);
+                    },
+                    0b110 => {
+                        var bufmini: *[4]u8 = @ptrCast(buffer);
+                        var val: u32 = std.mem.readIntLittle(u32, bufmini);
+                        val64 = @intCast(val);
+                    },
+                    0b101 => {
+                        var bufmini: *[2]u8 = @ptrCast(buffer);
+                        var val: u16 = std.mem.readIntLittle(u16, bufmini);
+                        val64 = @intCast(val);
+                    },
+                    0b100 => {
+                        var bufmini: *[1]u8 = @ptrCast(buffer);
+                        var val: u8 = std.mem.readIntLittle(u8, bufmini);
+                        val64 = @intCast(val);
                     },
                     else => return InstructionError.InvalidInstruction,
                 }
