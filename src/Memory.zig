@@ -39,6 +39,9 @@ pub const MemorySegment: type = struct {
 
 segments: MemorySegmentArray,
 
+failed_addr: VirtualAddress = 0,
+failed_data: ?Byte = null,
+
 fn getSegment(self: *Memory, addr: PhysicalAddress) ?*MemorySegment {
     for (self.segments.items) |segment| {
         var base = segment.base;
@@ -58,6 +61,8 @@ fn readByte(self: *Memory, addr: PhysicalAddress) MemAccessError!Byte {
         // when byte is null
         return byte.?;
     } else {
+        self.failed_addr = addr;
+        self.failed_data = null;
         return MemAccessError.NoSegmentMapped;
     }
 }
@@ -68,6 +73,8 @@ fn writeByte(self: *Memory, addr: PhysicalAddress, data: Byte) MemAccessError!vo
         // Discard return value
         _ = try seg.callback(seg, addr - seg.base, data);
     } else {
+        self.failed_addr = addr;
+        self.failed_data = data;
         return MemAccessError.NoSegmentMapped;
     }
 }

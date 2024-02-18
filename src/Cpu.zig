@@ -2,6 +2,7 @@ const std = @import("std");
 const defs = @import("defs.zig");
 const Byte = defs.Byte;
 const Memory = @import("Memory.zig");
+const MemoryAccessError = Memory.MemAccessError;
 const MemorySegment = Memory.MemorySegment;
 const VirtualAddress = Memory.VirtualAddress;
 const Allocator = std.mem.Allocator;
@@ -62,6 +63,7 @@ pub const RunReturn = struct {
     t: union(enum) {
         BadInstruction: Instruction,
         UnknownOpcode: struct { opcode: Instructions.Opcode, instr: u32 },
+        MemError: *Memory,
         OK: bool,
     },
 
@@ -79,6 +81,14 @@ pub const RunReturn = struct {
             .UnknownOpcode => |opcode| return writer.print("{X}: Unknown Opcode: {b:0>8} {X:0>8}", .{ value.cpuState.registers.PCHandle().Read() - 4, @intFromEnum(
                 opcode.opcode,
             ), opcode.instr }),
+            .MemError => |mem| {
+                try writer.print("{X}: ", .{value.cpuState.registers.PCHandle().Read()});
+                if (mem.failed_data) |data| {
+                    return writer.print("Failed to write {X:0<2} to {X}\n", .{ data, mem.failed_addr });
+                } else {
+                    return writer.print("Failed to read from {X}\n", .{mem.failed_addr});
+                }
+            },
             .OK => return,
         }
     }
@@ -86,7 +96,11 @@ pub const RunReturn = struct {
 
 pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, testDataBuffer: []Byte) !RunReturn {
     while (true) {
-        var instrb = try self.Fetch();
+        var instrb = self.Fetch() catch |err| if (err == MemoryAccessError.NoSegmentMapped) {
+            return RunReturn{ .cpuState = self.*, .t = .{
+                .MemError = self.mem,
+            } };
+        } else return err;
 
         var instr = Instruction.FromInt(instrb) catch |err| switch (err) {
             Instructions.InstructionError.UnknownOpcode => return RunReturn{
@@ -112,6 +126,9 @@ pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, te
                         .instr = instrb,
                     } },
                 },
+                MemoryAccessError.NoSegmentMapped => return RunReturn{ .cpuState = self.*, .t = .{
+                    .MemError = self.mem,
+                } },
 
                 else => return err,
             }

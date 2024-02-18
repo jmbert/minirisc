@@ -431,7 +431,6 @@ pub const InstructionI = struct {
                     },
                     .ADDI => {
                         var new = @addWithOverflow(rs1Handle.Read(), immsextend).@"0";
-                        std.debug.print("{X} + {X} = {X}\n", .{ rs1Handle.Read(), immsextend, new });
                         rdHandle.Write(new);
                     },
                     .SLLI => {
@@ -476,45 +475,36 @@ pub const InstructionI = struct {
                 var addr: u64 = @bitCast(@as(i64, @intCast(baseHandle.Read())) + offset);
                 var initBuffer = ([_]u8{0} ** 8);
                 var buffer: []Byte = &initBuffer;
-                var size: u8 = 8;
+                try cpu.mem.Read(addr, buffer);
+                var val64: u64 = 0;
 
                 switch (self.funct3) {
                     3 => {
                         // Already done by default
                     },
                     2 => {
-                        var buf = ([_]u8{0} ** 4);
-                        buffer = &buf;
-                        size = 4;
+                        var bufmini: *[4]u8 = @ptrCast(buffer);
+                        var val: u32 = std.mem.readIntLittle(u32, bufmini);
+                        val64 = signExtend(u32, val);
                     },
                     1 => {
-                        var buf = ([_]u8{0} ** 2);
-                        buffer = &buf;
-                        size = 2;
+                        var bufmini: *[2]u8 = @ptrCast(buffer);
+                        var val: u16 = std.mem.readIntLittle(u16, bufmini);
+                        val64 = signExtend(u16, val);
                     },
                     0 => {
-                        var buf = ([_]u8{0} ** 1);
-                        buffer = &buf;
-                        size = 1;
+                        var bufmini: *[1]u8 = @ptrCast(buffer);
+                        var val: u8 = std.mem.readIntLittle(u8, bufmini);
+                        val64 = signExtend(u8, val);
                     },
                     else => return InstructionError.InvalidInstruction,
                 }
 
-                try cpu.mem.Read(addr, buffer);
-
-                var buffer8: [8]u8 = [_]u8{0} ** 8;
-
-                for (buffer, 0..) |val, i| {
-                    buffer8[i] = val;
-                }
-
-                var val: u64 = std.mem.readIntLittle(u64, &buffer8);
-                destHandle.Write(val);
+                destHandle.Write(val64);
             },
             .JALR => {
                 var pcHandle = cpu.registers.PCHandle();
                 var newPC: u64 = @bitCast(@as(i64, @bitCast(rs1Handle.Read())) + @as(i64, @bitCast(immsextend)));
-                std.debug.print("{X} + {X}\n", .{ rs1Handle.Read(), immsextend });
 
                 pcHandle.Write(newPC);
                 rdHandle.Write(pcHandle.Read());
