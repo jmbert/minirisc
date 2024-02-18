@@ -507,16 +507,16 @@ pub const InstructionI = struct {
                         rdHandle.Write(val);
                     },
                     .SRI => {
-                        var funct7: u7 = @truncate(immsextend >> 5);
-                        if (funct7 != 0b0100000) {
+                        var funct7: u7 = @truncate(self.imm_11_0 >> 6);
+                        if (funct7 != 0b010000) { // SRLI
                             var rs1: u64 = rs1Handle.Read();
                             var shift: u6 = @truncate(immsextend);
                             var val = rs1 >> shift;
-                            rdHandle.Write(val);
+                            rdHandle.Write(val); // SRAI
                         } else {
-                            var rs1: i64 = @bitCast(rs1Handle.Read());
+                            var rs1i: i64 = @bitCast(rs1Handle.Read());
                             var shift: u6 = @truncate(immsextend);
-                            rdHandle.Write(@bitCast(rs1 >> shift));
+                            rdHandle.Write(@bitCast(rs1i >> shift));
                         }
                     },
                     .SLTI => {
@@ -638,15 +638,34 @@ pub const InstructionI = struct {
         _: std.fmt.FormatOptions,
         writer: anytype,
     ) std.os.WriteError!void {
-        var immsextend = signExtend(i12, @as(i12, @bitCast(value.imm_11_0)));
-        var funct7: u7 = @truncate(immsextend >> 5);
+        var funct7: u7 = @truncate(value.imm_11_0 >> 6);
         try writeOperation(value.opcode, value.funct3, funct7, null, writer);
         try writer.print(" ", .{});
         try RegisterFile.writexReg(value.rd, writer);
         try writer.print(", ", .{});
         try RegisterFile.writexReg(value.rs1, writer);
         try writer.print(", ", .{});
-        try writer.print("{X}", .{@as(i12, @bitCast(value.imm_11_0))});
+        switch (value.opcode) {
+            .OP => {
+                switch (@as(funct3_OP_IMM, @enumFromInt(value.funct3))) {
+                    .SRI,
+                    .SLLI,
+                    => try writer.print("{X}", .{@as(u6, @truncate(value.imm_11_0))}),
+
+                    else => try writer.print("{X}", .{@as(i12, @bitCast(value.imm_11_0))}),
+                }
+            },
+            .OP_32 => {
+                switch (@as(funct3_OPIMM32, @enumFromInt(value.funct3))) {
+                    .SRIW,
+                    .SLLIW,
+                    => try writer.print("{X}", .{@as(u6, @truncate(value.imm_11_0))}),
+
+                    else => try writer.print("{X}", .{@as(i12, @bitCast(value.imm_11_0))}),
+                }
+            },
+            else => try writer.print("{X}", .{@as(i12, @bitCast(value.imm_11_0))}),
+        }
     }
 };
 
