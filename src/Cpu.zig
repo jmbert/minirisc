@@ -78,7 +78,7 @@ pub const RunReturn = struct {
                 value.cpuState.registers.PCHandle().Read() - 4,
                 instr,
             }),
-            .UnknownOpcode => |opcode| return writer.print("{X}: Unknown Opcode: {b:0>8} {X:0>8}", .{ value.cpuState.registers.PCHandle().Read() - 4, @intFromEnum(
+            .UnknownOpcode => |opcode| return writer.print("{X}: Unknown Opcode: {b:0>7} {X:0>8}", .{ value.cpuState.registers.PCHandle().Read() - 4, @intFromEnum(
                 opcode.opcode,
             ), opcode.instr }),
             .MemError => |mem| {

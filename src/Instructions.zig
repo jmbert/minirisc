@@ -26,7 +26,7 @@ pub const Opcode = enum(u7) {
     AUIPC = 0b0010111,
     SYSTEM = 0b1110011,
     BRANCH = 0b1100011,
-    MISC_MEM = 0b1111,
+    MISC_MEM = 0b0001111,
     STORE = 0b100011,
     LOAD = 0b000011,
     _,
