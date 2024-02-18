@@ -487,7 +487,8 @@ pub const InstructionI = struct {
 
                 switch (self.funct3) {
                     3 => {
-                        // Already done by default
+                        var bufmini: *[8]u8 = @ptrCast(buffer);
+                        val64 = std.mem.readIntLittle(u64, bufmini);
                     },
                     2 => {
                         var bufmini: *[4]u8 = @ptrCast(buffer);
