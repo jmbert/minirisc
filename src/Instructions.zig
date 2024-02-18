@@ -203,7 +203,15 @@ pub fn writeOperation(
             }
         },
         .OP_IMM => {
-            try writer.print("{s}", .{@tagName(@as(funct3_OP_IMM, @enumFromInt(funct3.?)))});
+            var funct3op: funct3_OP_IMM = @enumFromInt(funct3.?);
+            if (funct3op == .SRI) {
+                if (funct7.? == 0b0100000) {
+                    return writer.print("SRAI", .{});
+                } else {
+                    return writer.print("SRLI", .{});
+                }
+            }
+            return writer.print("{s}", .{@tagName(funct3op)});
         },
         .OP_IMM_32 => {
             try writer.print("{s}", .{@tagName(@as(funct3_OPIMM32, @enumFromInt(funct3.?)))});
@@ -443,12 +451,11 @@ pub const InstructionI = struct {
                         if (funct7 != 0b0100000) {
                             var rs1: u64 = rs1Handle.Read();
                             var shift: u6 = @truncate(immsextend);
-                            shift &= 0b11111;
-                            rdHandle.Write(rs1 >> shift);
+                            var val = rs1 >> shift;
+                            rdHandle.Write(val);
                         } else {
                             var rs1: i64 = @bitCast(rs1Handle.Read());
                             var shift: u6 = @truncate(immsextend);
-                            shift &= 0b11111;
                             rdHandle.Write(@bitCast(rs1 >> shift));
                         }
                     },
@@ -519,13 +526,15 @@ pub const InstructionI = struct {
         _: std.fmt.FormatOptions,
         writer: anytype,
     ) std.os.WriteError!void {
-        try writeOperation(value.opcode, value.funct3, null, null, writer);
+        var immsextend = signExtend(i12, @as(i12, @bitCast(value.imm_11_0)));
+        var funct7: u7 = @truncate(immsextend >> 5);
+        try writeOperation(value.opcode, value.funct3, funct7, null, writer);
         try writer.print(" ", .{});
         try RegisterFile.writexReg(value.rd, writer);
         try writer.print(", ", .{});
         try RegisterFile.writexReg(value.rs1, writer);
         try writer.print(", ", .{});
-        try writer.print("{d}", .{@as(i12, @bitCast(value.imm_11_0))});
+        try writer.print("{X}", .{@as(i12, @bitCast(value.imm_11_0))});
     }
 };
 
@@ -768,7 +777,7 @@ pub const InstructionU = struct {
         try writer.print(" ", .{});
         try RegisterFile.writexReg(value.rd, writer);
         try writer.print(", ", .{});
-        try writer.print("{X}", .{@as(u64, value.imm_31_12) << 12});
+        try writer.print("{X}", .{@as(u64, value.imm_31_12)});
     }
 };
 

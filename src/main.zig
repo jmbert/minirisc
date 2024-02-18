@@ -25,6 +25,9 @@ pub fn main() !void {
 
     var cpu: Cpu = try Cpu.New(startHertz, allocator, begin);
 
+    var beforeSeg = try Ram.NewRamSegment(0, begin - 1, allocator, "BEFORE");
+    try cpu.AddMemorySegment(beforeSeg);
+
     var fileseg = try FileRam.NewFileRamSegment(begin, args[1], 0x100000000, allocator);
     var outpath = args[2];
     var out = try std.fs.cwd().createFile(outpath, .{});

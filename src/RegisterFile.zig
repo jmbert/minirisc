@@ -24,6 +24,7 @@ pub const csr = enum(u12) {
     MIE = 0x304,
     MCAUSE = 0x342,
     MSTATUS = 0x300,
+    MSCRATCH = 0x340,
 
     UNIMPLEMENTED = 0xFFF,
     _,
@@ -31,7 +32,7 @@ pub const csr = enum(u12) {
 
 pub fn writecsrReg(r: csr, writer: anytype) std.os.WriteError!void {
     switch (r) {
-        .MISA, .MHARTID, .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE, .MSTATUS => try writer.print("{s}", .{@tagName(r)}),
+        .MISA, .MHARTID, .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE, .MSTATUS, .MSCRATCH => try writer.print("{s}", .{@tagName(r)}),
         else => try writer.print("CSR_UNKNOWN({X})", .{@intFromEnum(r)}),
     }
 }
@@ -41,14 +42,15 @@ const mrstatusMask = 0b0_0000000000000000000000000_0_0_00_00_000000000_0_0_0_0_0
 const mrstatusOMsk = 0b0_0000000000000000000000000_0_0_00_00_000000000_0_0_0_0_0_0_00_00_00_00_0_0_0_0_0_0_0_0_0;
 
 pub const CSRegister = union(csr) {
-    MISA: Register,
-    MHARTID: Register,
-    MTVEC: Register,
-    MEPC: Register,
-    MIP: Register,
-    MIE: Register,
-    MCAUSE: Register,
-    MSTATUS: Register,
+    MISA: *Register,
+    MHARTID: *Register,
+    MTVEC: *Register,
+    MEPC: *Register,
+    MIP: *Register,
+    MIE: *Register,
+    MCAUSE: *Register,
+    MSTATUS: *Register,
+    MSCRATCH: *Register,
     UNIMPLEMENTED: Register,
 
     pub fn Read(self: *CSRegister) Register {
@@ -57,11 +59,11 @@ pub const CSRegister = union(csr) {
                 return @as(u64, mextension) | (2 << 62);
             },
             .MHARTID => return 0,
-            .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE => |v| {
-                return v;
+            .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE, .MSCRATCH => |v| {
+                return v.*;
             },
             .MSTATUS => |v| {
-                return (v & mrstatusMask) | mrstatusMask;
+                return (v.* & mrstatusMask) | mrstatusMask;
             },
             else => return 0,
         }
@@ -70,36 +72,23 @@ pub const CSRegister = union(csr) {
         // TODO - Implement WLRL, WARL
         switch (self.*) {
             .MHARTID, .MISA => return,
-            .MTVEC => {
-                self.MTVEC = data;
-            },
-            .MEPC => {
-                self.MEPC = data;
-            },
-            .MIP => {
-                self.MIP = data;
-            },
-            .MIE => {
-                self.MIE = data;
-            },
-            .MCAUSE => {
-                self.MCAUSE = data;
-            },
-            .MSTATUS => {
-                self.MSTATUS = data & mwstatusMask;
+            .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE, .MSTATUS => |v| {
+                v.* = data & mwstatusMask;
             },
             else => return,
         }
     }
 
-    pub fn New(t: u12) CSRegister {
+    pub fn New(t: u12, alloc: Allocator) !CSRegister {
+        var r = try alloc.create(Register);
+        r.* = 0;
         switch (@as(csr, @enumFromInt(t))) {
-            .MEPC => return CSRegister{ .MEPC = 0 },
-            .MHARTID => return CSRegister{ .MHARTID = 0 },
-            .MTVEC => return CSRegister{ .MTVEC = 0 },
-            .MISA => return CSRegister{ .MISA = 0 },
-            .MIE => return CSRegister{ .MIE = 0 },
-            .MIP => return CSRegister{ .MIP = 0 },
+            .MEPC => return CSRegister{ .MEPC = r },
+            .MHARTID => return CSRegister{ .MHARTID = r },
+            .MTVEC => return CSRegister{ .MTVEC = r },
+            .MISA => return CSRegister{ .MISA = r },
+            .MIE => return CSRegister{ .MIE = r },
+            .MIP => return CSRegister{ .MIP = r },
             else => return CSRegister{ .UNIMPLEMENTED = 0 },
         }
     }
@@ -203,7 +192,7 @@ pub fn New(allocator: Allocator) !*RegisterFile {
     registers.csrs = try allocator.alloc(CSRegister, csrN);
 
     for (0..csrN) |i| {
-        registers.csrs[i] = CSRegister.New(@intCast(i));
+        registers.csrs[i] = try CSRegister.New(@intCast(i), allocator);
     }
 
     registers.pc = 0;
