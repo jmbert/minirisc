@@ -137,10 +137,14 @@ pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, te
         var pcHandle = self.registers.PCHandle();
 
         // Check if instruction is not aligned
-        if (pcHandle.Read() % 4 != 0) {
-            var new = mipHandle.Read() | (1 << @intFromEnum(@as(ExceptionCode, .INSTR_ADDR_MA)));
-            mipHandle.Write(new);
-        }
+        //if (pcHandle.Read() % 4 != 0) {
+        //    std.debug.print("Misaligned instruction access at {X}\n", .{pcHandle.Read()});
+        //    var new = mipHandle.Read() | (1 << @intFromEnum(@as(ExceptionCode, .INSTR_ADDR_MA)));
+        //    mipHandle.Write(new);
+        //} else {
+        //    var new = mipHandle.Read() & ~@as(u64, (1 << @intFromEnum(@as(ExceptionCode, .INSTR_ADDR_MA))));
+        //    mipHandle.Write(new);
+        //}
 
         // Check for (machine) exceptions
         var servicing = mipHandle.Read();

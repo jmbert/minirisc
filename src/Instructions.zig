@@ -528,6 +528,8 @@ pub const InstructionI = struct {
             .JALR => {
                 var pcHandle = cpu.registers.PCHandle();
                 var newPC: u64 = @bitCast(@as(i64, @bitCast(rs1Handle.Read())) + @as(i64, @bitCast(immsextend)));
+                newPC &= ~@as(u64, 1); // Clear least significant bit
+
                 var oldPC = pcHandle.Read();
 
                 pcHandle.Write(newPC);
