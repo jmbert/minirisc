@@ -512,9 +512,10 @@ pub const InstructionI = struct {
             .JALR => {
                 var pcHandle = cpu.registers.PCHandle();
                 var newPC: u64 = @bitCast(@as(i64, @bitCast(rs1Handle.Read())) + @as(i64, @bitCast(immsextend)));
+                var oldPC = pcHandle.Read();
 
                 pcHandle.Write(newPC);
-                rdHandle.Write(pcHandle.Read());
+                rdHandle.Write(oldPC);
             },
             else => return InstructionError.UnknownOpcode,
         }
