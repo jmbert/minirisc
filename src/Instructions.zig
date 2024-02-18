@@ -421,18 +421,18 @@ pub const InstructionR = struct {
                         rdHandle.Write(valrextend);
                     },
                     .SRW => {
-                        var rs1: u64 = rs1Handle.Read();
-                        var rs2: u64 = rs2Handle.Read();
+                        var rs1: u32 = @truncate(rs1Handle.Read());
+                        var rs2: u32 = @truncate(rs2Handle.Read());
                         if (self.funct7 != 0b0100000) {
-                            var shift: u6 = @truncate(rs2);
-                            var val = rs1 >> shift;
-                            var valrextend = signExtend(u32, @as(u32, @truncate(val)));
+                            var shift: u5 = @truncate(rs2);
+                            var val: u32 = rs1 >> shift;
+                            var valrextend = signExtend(u32, val);
                             rdHandle.Write(valrextend);
                         } else {
-                            var rs1i: i64 = @bitCast(rs1);
-                            var shift: u6 = @truncate(rs2);
-                            var val: u64 = @bitCast(rs1i >> shift);
-                            var valrextend = signExtend(u32, @as(u32, @truncate(val)));
+                            var rs1i: i32 = @bitCast(rs1);
+                            var shift: u5 = @truncate(rs2);
+                            var val: i32 = @bitCast(rs1i >> shift);
+                            var valrextend: u64 = @bitCast(@as(i64, @intCast(val)));
                             rdHandle.Write(valrextend);
                         }
                     },
@@ -552,17 +552,17 @@ pub const InstructionI = struct {
                     },
                     .SRIW => {
                         var funct7: u7 = @truncate(immsextend >> 5);
-                        var rs1: u64 = rs1Handle.Read();
+                        var rs1: u32 = @truncate(rs1Handle.Read());
                         if (funct7 != 0b0100000) {
-                            var shift: u6 = @truncate(immsextend);
-                            var val = rs1 >> shift;
-                            var valrextend = signExtend(u32, @as(u32, @truncate(val)));
+                            var shift: u5 = @truncate(immsextend);
+                            var val: u32 = rs1 >> shift;
+                            var valrextend = signExtend(u32, val);
                             rdHandle.Write(valrextend);
                         } else {
-                            var rs1i: i64 = @bitCast(rs1);
-                            var shift: u6 = @truncate(immsextend);
-                            var val: u64 = @bitCast(rs1i >> shift);
-                            var valrextend = signExtend(u32, @as(u32, @truncate(val)));
+                            var rs1i: i32 = @bitCast(rs1);
+                            var shift: u5 = @truncate(immsextend);
+                            var val: i32 = rs1i >> shift;
+                            var valrextend = signExtend(i32, val);
                             rdHandle.Write(valrextend);
                         }
                     },
