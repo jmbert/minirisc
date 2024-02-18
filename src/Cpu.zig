@@ -112,7 +112,7 @@ pub fn Run(self: *Cpu, endAddr: VirtualAddress, testDataAddr: VirtualAddress, te
             },
             else => return err,
         };
-        std.debug.print("{X}: {s}\n", .{ self.registers.PCHandle().Read() - 4, instr });
+        //std.debug.print("{X}: {s}\n", .{ self.registers.PCHandle().Read() - 4, instr });
         instr.Execute(self) catch |err| {
             switch (err) {
                 Instructions.InstructionError.UnimplementedInstruction => return RunReturn{

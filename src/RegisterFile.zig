@@ -26,15 +26,11 @@ pub const csr = enum(u12) {
     MSTATUS = 0x300,
     MSCRATCH = 0x340,
 
-    UNIMPLEMENTED = 0xFFF,
     _,
 };
 
 pub fn writecsrReg(r: csr, writer: anytype) std.os.WriteError!void {
-    switch (r) {
-        .MISA, .MHARTID, .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE, .MSTATUS, .MSCRATCH => try writer.print("{s}", .{@tagName(r)}),
-        else => try writer.print("CSR_UNKNOWN({X})", .{@intFromEnum(r)}),
-    }
+    try writer.print("{s}", .{@tagName(r)});
 }
 
 const mwstatusMask = 0b0_0000000000000000000000000_0_0_00_00_000000000_0_0_0_0_0_0_00_00_11_00_0_1_0_0_0_1_0_0_0;
@@ -51,7 +47,6 @@ pub const CSRegister = union(csr) {
     MCAUSE: *Register,
     MSTATUS: *Register,
     MSCRATCH: *Register,
-    UNIMPLEMENTED: Register,
 
     pub fn Read(self: *CSRegister) Register {
         switch (self.*) {
@@ -65,24 +60,22 @@ pub const CSRegister = union(csr) {
             .MSTATUS => |v| {
                 return (v.* & mrstatusMask) | mrstatusMask;
             },
-            else => return 0,
         }
     }
     pub fn Write(self: *CSRegister, data: Register) void {
         // TODO - Implement WLRL, WARL
         switch (self.*) {
             .MHARTID, .MISA => return,
-            .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE => |v| {
+            .MTVEC, .MEPC, .MIP, .MIE, .MCAUSE, .MSCRATCH => |v| {
                 v.* = data;
             },
             .MSTATUS => |v| {
                 v.* = data & mwstatusMask;
             },
-            else => return,
         }
     }
 
-    pub fn New(t: u12, alloc: Allocator) !CSRegister {
+    pub fn New(t: u12, alloc: Allocator) !?CSRegister {
         var r = try alloc.create(Register);
         r.* = 0;
         switch (@as(csr, @enumFromInt(t))) {
@@ -92,7 +85,11 @@ pub const CSRegister = union(csr) {
             .MISA => return CSRegister{ .MISA = r },
             .MIE => return CSRegister{ .MIE = r },
             .MIP => return CSRegister{ .MIP = r },
-            else => return CSRegister{ .UNIMPLEMENTED = 0 },
+            .MCAUSE => return CSRegister{ .MCAUSE = r },
+            .MSTATUS => return CSRegister{ .MSTATUS = r },
+            .MSCRATCH => return CSRegister{ .MSCRATCH = r },
+
+            _ => return null,
         }
     }
 };
@@ -103,17 +100,27 @@ pub const csrN = 4096;
 
 xRegs: []Register,
 pc: Register,
-csrs: []CSRegister,
+csrs: []?CSRegister,
 
 const CSRHandle = struct {
-    ptr: *CSRegister,
-    indx: csr,
+    ptr: ?*CSRegister,
+    indx: u12,
 
     pub fn Read(self: CSRHandle) Register {
-        return self.ptr.Read();
+        if (self.ptr) |ptr| {
+            return ptr.Read();
+        } else {
+            std.debug.print("Read from unimplemented CSR {X}\n", .{self.indx});
+            std.os.exit(1);
+        }
     }
     pub fn Write(self: CSRHandle, data: Register) void {
-        return self.ptr.Write(data);
+        if (self.ptr) |ptr| {
+            return ptr.Write(data);
+        } else {
+            std.debug.print("Write to unimplemented CSR {X}\n", .{self.indx});
+            std.os.exit(1);
+        }
     }
 };
 
@@ -175,9 +182,14 @@ pub fn XRegisterHandle(self: *RegisterFile, r: xReg) RegisterHandle {
 }
 
 pub fn CSRegisterHandle(self: *RegisterFile, r: csr) RegisterHandle {
+    var rval = self.csrs[@intFromEnum(r)];
+    var ptr: ?*CSRegister = null;
+    if (rval != null) {
+        ptr = &(self.csrs[@intFromEnum(r)].?);
+    }
     return RegisterHandle{ .csrHandle = CSRHandle{
-        .ptr = &(self.csrs[@intFromEnum(r)]),
-        .indx = r,
+        .ptr = ptr,
+        .indx = @intFromEnum(r),
     } };
 }
 pub fn PCHandle(self: *RegisterFile) RegisterHandle {
@@ -192,7 +204,7 @@ pub fn New(allocator: Allocator) !*RegisterFile {
     for (0..xRegN) |i| {
         registers.xRegs[i] = 0;
     }
-    registers.csrs = try allocator.alloc(CSRegister, csrN);
+    registers.csrs = try allocator.alloc(?CSRegister, csrN);
 
     for (0..csrN) |i| {
         registers.csrs[i] = try CSRegister.New(@intCast(i), allocator);

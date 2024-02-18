@@ -252,7 +252,7 @@ const funct3_OP = enum(u3) {
     ADDSUB = 0b000,
     SLL = 0b001,
     SLT = 0b010,
-    SLTY = 0b011,
+    SLTU = 0b011,
     XOR = 0b100,
     SR = 0b101,
     OR = 0b110,
@@ -355,7 +355,44 @@ pub const InstructionR = struct {
                         var rs2: u64 = rs2Handle.Read();
                         rdHandle.Write(rs1 ^ rs2);
                     },
-                    else => return InstructionError.UnimplementedInstruction,
+                    .SLL => {
+                        var rs1: u64 = rs1Handle.Read();
+                        var rs2: u64 = rs2Handle.Read();
+                        var shift: u6 = @truncate(rs2);
+                        var val = @shlWithOverflow(rs1, shift).@"0";
+                        rdHandle.Write(val);
+                    },
+                    .SR => {
+                        var rs1: u64 = rs1Handle.Read();
+                        var rs2: u64 = rs2Handle.Read();
+                        if (self.funct7 != 0b0100000) {
+                            var shift: u6 = @truncate(rs2);
+                            var val = rs1 >> shift;
+                            rdHandle.Write(val);
+                        } else {
+                            var rs1i: i64 = @bitCast(rs1);
+                            var shift: u6 = @truncate(rs2);
+                            rdHandle.Write(@bitCast(rs1i >> shift));
+                        }
+                    },
+                    .SLT => {
+                        var rs1: u64 = rs1Handle.Read();
+                        var rs2: u64 = rs2Handle.Read();
+                        if (@as(i64, @bitCast(rs1)) < @as(i64, @bitCast(rs2))) {
+                            rdHandle.Write(1);
+                        } else {
+                            rdHandle.Write(0);
+                        }
+                    },
+                    .SLTU => {
+                        var rs1: u64 = rs1Handle.Read();
+                        var rs2: u64 = rs2Handle.Read();
+                        if (rs1 < rs2) {
+                            rdHandle.Write(1);
+                        } else {
+                            rdHandle.Write(0);
+                        }
+                    },
                 }
             },
             .OP_32 => {
@@ -375,7 +412,30 @@ pub const InstructionR = struct {
                             rdHandle.Write(@truncate(valrextend));
                         }
                     },
-                    else => return InstructionError.UnimplementedInstruction,
+                    .SLLW => {
+                        var rs1: u64 = rs1Handle.Read();
+                        var rs2: u64 = rs2Handle.Read();
+                        var shift: u6 = @truncate(rs2);
+                        var val = @shlWithOverflow(rs1, shift).@"0";
+                        var valrextend = signExtend(u32, @as(u32, @truncate(val)));
+                        rdHandle.Write(valrextend);
+                    },
+                    .SRW => {
+                        var rs1: u64 = rs1Handle.Read();
+                        var rs2: u64 = rs2Handle.Read();
+                        if (self.funct7 != 0b0100000) {
+                            var shift: u6 = @truncate(rs2);
+                            var val = rs1 >> shift;
+                            var valrextend = signExtend(u32, @as(u32, @truncate(val)));
+                            rdHandle.Write(valrextend);
+                        } else {
+                            var rs1i: i64 = @bitCast(rs1);
+                            var shift: u6 = @truncate(rs2);
+                            var val: u64 = @bitCast(rs1i >> shift);
+                            var valrextend = signExtend(u32, @as(u32, @truncate(val)));
+                            rdHandle.Write(valrextend);
+                        }
+                    },
                 }
             },
             else => return InstructionError.UnknownOpcode,
@@ -427,7 +487,7 @@ pub const InstructionI = struct {
         switch (self.opcode) {
             .OP_IMM => {
                 var f3: funct3_OP_IMM = @enumFromInt(self.funct3);
-                try switch (f3) {
+                switch (f3) {
                     .XORI => {
                         rdHandle.Write(rs1Handle.Read() ^ immsextend);
                     },
@@ -459,21 +519,54 @@ pub const InstructionI = struct {
                             rdHandle.Write(@bitCast(rs1 >> shift));
                         }
                     },
-
-                    else => InstructionError.UnimplementedInstruction,
-                };
+                    .SLTI => {
+                        if (@as(i64, @bitCast(rs1Handle.Read())) < @as(i64, @bitCast(immsextend))) {
+                            rdHandle.Write(1);
+                        } else {
+                            rdHandle.Write(0);
+                        }
+                    },
+                    .SLTIU => {
+                        if (rs1Handle.Read() < immsextend) {
+                            rdHandle.Write(1);
+                        } else {
+                            rdHandle.Write(0);
+                        }
+                    },
+                }
             },
             .OP_IMM_32 => {
                 var f3: funct3_OPIMM32 = @enumFromInt(self.funct3);
-                try switch (f3) {
+                switch (f3) {
                     .ADDIW => {
                         var val = @addWithOverflow(rs1Handle.Read(), immsextend).@"0";
                         var valrextend = signExtend(u32, @as(u32, @truncate(val)));
                         rdHandle.Write(@truncate(valrextend));
                     },
-
-                    else => InstructionError.UnimplementedInstruction,
-                };
+                    .SLLIW => {
+                        var rs1: u64 = rs1Handle.Read();
+                        var shift: u6 = @truncate(immsextend);
+                        var val = @shlWithOverflow(rs1, shift).@"0";
+                        var valrextend = signExtend(u32, @as(u32, @truncate(val)));
+                        rdHandle.Write(valrextend);
+                    },
+                    .SRIW => {
+                        var funct7: u7 = @truncate(immsextend >> 5);
+                        var rs1: u64 = rs1Handle.Read();
+                        if (funct7 != 0b0100000) {
+                            var shift: u6 = @truncate(immsextend);
+                            var val = rs1 >> shift;
+                            var valrextend = signExtend(u32, @as(u32, @truncate(val)));
+                            rdHandle.Write(valrextend);
+                        } else {
+                            var rs1i: i64 = @bitCast(rs1);
+                            var shift: u6 = @truncate(immsextend);
+                            var val: u64 = @bitCast(rs1i >> shift);
+                            var valrextend = signExtend(u32, @as(u32, @truncate(val)));
+                            rdHandle.Write(valrextend);
+                        }
+                    },
+                }
             },
             .LOAD => {
                 var baseHandle = cpu.registers.XRegisterHandle(self.rs1);
@@ -1010,6 +1103,12 @@ pub const InstructionPRIV = struct {
                                     .SUPERVISOR => currentPending |= 1 << @intFromEnum(@as(ExceptionCode, .ECALL_S)),
                                     .USER => currentPending |= 1 << @intFromEnum(@as(ExceptionCode, .ECALL_U)),
                                 }
+                                mipHandle.Write(currentPending);
+                            },
+                            .EBREAK => {
+                                var mipHandle = cpu.registers.CSRegisterHandle(.MIP);
+                                var currentPending = mipHandle.Read();
+                                currentPending |= 1 << @intFromEnum(@as(ExceptionCode, .BRK));
                                 mipHandle.Write(currentPending);
                             },
                             else => return InstructionError.UnimplementedInstruction,
